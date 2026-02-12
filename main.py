@@ -64,6 +64,7 @@ class ToolDefinition(BaseModel):
     """MCP Tool Definition model."""
     name: str
     description: str
+    action_type: str  # "read" or "write" — FRS Action Gating
 
 
 def list_tools() -> list[ToolDefinition]:
@@ -73,15 +74,18 @@ def list_tools() -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="search_vertex_docs",
-            description="Search the official Vertex AI documentation for technical answers."
+            description="Search the official Vertex AI documentation for technical answers.",
+            action_type="read"
         ),
         ToolDefinition(
             name="send_email",
-            description="Send an email to a recipient. Requires subject and body."
+            description="Send an email to a recipient. Requires subject and body.",
+            action_type="write"
         ),
         ToolDefinition(
             name="save_file",
-            description="Save text content to a file in cloud storage. Requires filename and content."
+            description="Save text content to a file in cloud storage. Requires filename and content.",
+            action_type="write"
         )
     ]
 
@@ -229,7 +233,28 @@ def handle_method(method: str, params: Optional[dict] = None) -> Any:
         
         tool_name = params.get("name")
         tool_args = params.get("arguments", {})
-        
+
+        # ── FRS Action Gating ─────────────────────────────────────────
+        # Look up the tool definition to check its action_type
+        tools = list_tools()
+        tool_def = next((t for t in tools if t.name == tool_name), None)
+        if tool_def and tool_def.action_type == "write":
+            approval_token = params.get("approval_token")
+            if not approval_token:
+                return {
+                    "error": {
+                        "code": -32001,
+                        "message": "APPROVAL_REQUIRED",
+                        "data": {
+                            "tool": tool_name,
+                            "action_type": "write",
+                            "hint": "Write tools require an 'approval_token' in params. "
+                                    "Obtain one from the HITL governance flow."
+                        }
+                    }
+                }
+        # ──────────────────────────────────────────────────────────────
+
         if tool_name == "search_vertex_docs":
             query = tool_args.get("query", "")
             if not query:
